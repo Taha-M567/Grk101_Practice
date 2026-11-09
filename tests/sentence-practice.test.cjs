@@ -27,43 +27,54 @@ function load(saved = {}) {
   vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
   return {elements, saved, read: code => vm.runInContext(code, context), button: label => elements.topicButtons.children.find(b => b.children[0].textContent === label)};
 }
-const label = 'Homework / practice sentences';
+const label = 'Test 3 practice sentences';
 
-test('all sentence exercises are covered with unique IDs, prompts, answers, and references', () => {
+test('sentence cards cover only the announced test topics in Greek-to-English form', () => {
   const app = load();
   const cards = JSON.parse(app.read('JSON.stringify(allCards)'));
   const practice = cards.filter(c => c.subtopic === 'practice');
-  assert.equal(cards.length, 370);
+  assert.equal(cards.length, 338);
   assert.equal(new Set(cards.map(c => c.id)).size, cards.length);
-  for (let n = 1; n <= 370; n++) assert.ok(cards.some(c => c.id === `c${String(n).padStart(3, '0')}`));
-  assert.equal(practice.length, 110);
+  assert.equal(practice.length, 84);
+  assert.equal(cards.filter(c => c.topic === 'translation').length, practice.length);
   assert.equal(new Set(practice.map(c => c.front.normalize('NFC').trim())).size, practice.length);
-  const coverage = {};
+  const focuses = new Set();
+  const allowedFocuses = ['Middle / deponent verbs','3rd-declension nouns','Dative case','Prepositions','Reflexive pronouns','Substantive adjectives'];
   for (const card of practice) {
     assert.equal(card.topic, 'translation');
     assert.ok(card.front && card.back && card.note);
-    assert.match(card.source, /Exercise [67][α-ω], \d+[ab]?, p\. \d+(?:–\d+)? \(2nd ed\.\)$/u);
-    assert.doesNotMatch(card.back, /_____|undefined|�/u);
-    if (card.note.startsWith('English → Greek')) assert.match(card.note, /Suggested translation/);
-    const exercise = card.source.match(/Exercise ([^,]+)/)[1];
-    coverage[exercise] = (coverage[exercise] || 0) + 1;
+    assert.match(card.front, /[\u0370-\u03ff\u1f00-\u1fff]/u);
+    assert.match(card.back, /[A-Za-z]/);
+    assert.doesNotMatch(card.front + card.back, /_____|undefined|�/u);
+    assert.doesNotMatch(card.back, /[\u0370-\u03ff\u1f00-\u1fff]/u);
+    assert.match(card.note, /^Greek → English\. Test focus: /);
+    assert.match(card.source, /^[67][αβ] · (?:Exercise|Grammar|Reading)/u);
+    for (const focus of card.note.match(/Test focus: ([^.]+)\./)[1].split('; ')) {
+      assert.ok(allowedFocuses.includes(focus));
+      focuses.add(focus);
+    }
   }
-  assert.deepEqual(coverage, {'6γ':10,'6δ':10,'6η':10,'6θ':5,'6ι':10,'6λ':10,'6μ':12,'6ν':10,'6ξ':10,'6ο':4,'7γ':7,'7δ':12});
-  for (const [exercise, count] of Object.entries(coverage)) {
-    const actual = practice.filter(c => c.source.includes(`Exercise ${exercise},`)).map(c => c.source.split(', ')[1]).sort();
-    const expected = ['6γ','6δ','6ξ'].includes(exercise)
-      ? Array.from({length: count / 2}, (_, i) => [`${i+1}a`, `${i+1}b`]).flat()
-      : exercise === '7γ' ? ['1a','1b','2','3','4','5','6']
-      : Array.from({length: count}, (_, i) => String(i+1));
-    assert.deepEqual(actual, expected.sort(), `${exercise}: every printed item appears once`);
+  assert.deepEqual([...focuses].sort(), allowedFocuses.sort());
+  const numbers = n => Array.from({length:n}, (_, i) => String(i+1));
+  const selectedItems = {
+    '6γ':['1b','2a','2b','3b','4b','5a','5b'], '6δ':['1b','2a','2b','3b','4b','5b'],
+    '6η':numbers(10), '6ι':numbers(10), '6λ':numbers(10), '6μ':[...numbers(10),'12'],
+    '6ξ':['1a','2a','3a','4a','5a'], '7γ':['1a','1b','2','3','4','5','6'], '7δ':numbers(12),
+  };
+  for (const [exercise, expected] of Object.entries(selectedItems)) {
+    const matching = practice.filter(c => c.source.includes(`Exercise ${exercise},`));
+    assert.deepEqual(matching.map(c => c.source.split(', ')[1]).sort(), expected.sort(), exercise);
+    for (const card of matching) assert.match(card.source, /\(2nd ed\.\)$/);
   }
-  assert.equal(practice.filter(c => Number(c.id.slice(1)) < 291).length, 30);
-  assert.ok(['c260','c281','c282','c283','c284','c285'].every(id => !practice.some(c => c.id === id)));
+  const removed = ['c255','c292','c293','c296','c300','c302','c304','c331', ...numbers(5).map(n => `c${309+Number(n)}`), ...numbers(10).map(n => `c${332+Number(n)}`), 'c344','c346','c348','c350','c352','c353','c354','c355','c356'];
+  assert.equal(removed.length, 32);
+  assert.ok(removed.every(id => !cards.some(c => c.id === id)));
+  assert.ok(['c260','c281','c282','c283','c284','c285'].every(id => practice.some(c => c.id === id)));
 });
 
 test('category counts and visible cards follow all three textbook section filters', () => {
   const app = load();
-  for (const [section, count] of [['all',110],['6a',35],['6b',56],['7a',19]]) {
+  for (const [section, count] of [['all',84],['6a',24],['6b',36],['7a',24]]) {
     app.elements.section.listeners.change({target: {value: section}});
     assert.equal(app.read('topic'), 'all');
     assert.equal(app.button(label).attributes['aria-label'], `${label} (${count})`);
@@ -73,6 +84,7 @@ test('category counts and visible cards follow all three textbook section filter
     assert.equal(app.button(label).attributes['aria-pressed'], 'true');
     assert.equal(app.elements.grammarGroup.hidden, true);
     assert.match(app.elements.filterSummary.textContent, /2nd edition/);
+    assert.match(app.elements.filterSummary.textContent, /Greek → English/);
     const first = app.read('display[index].id');
     app.elements.next.click(); app.elements.prev.click();
     assert.equal(app.read('display[index].id'), first);
@@ -93,7 +105,7 @@ test('reused and new cards flip, persist ratings, and work in missed-card review
   app.elements.flip.click();
   assert.equal(app.elements.maintext.textContent, app.read('display[0].back'));
   assert.match(app.elements.source.textContent, /Exercise 6η/);
-  assert.match(app.elements.category.textContent, /Homework \/ practice sentences/);
+  assert.match(app.elements.category.textContent, /Test 3 practice sentences/);
   app.elements.known.click();
   assert.equal(app.read('display.length'), 0);
   assert.equal(app.elements.card.disabled, true);
@@ -107,10 +119,10 @@ test('reused and new cards flip, persist ratings, and work in missed-card review
   assert.equal(JSON.parse(saved['athenaze-test3-comprehensive-v2']).c004, true);
 });
 
-test('existing deponent category and broader translation category remain available', () => {
+test('deponent category is preserved and Translation contains the same selected sentences', () => {
   const app = load();
   app.button('Deponent verb translations').click();
   assert.equal(app.read('display.length'), 11);
   app.button('Translation').click();
-  assert.equal(app.read('display.length'), 116);
+  assert.equal(app.read('display.length'), 84);
 });
