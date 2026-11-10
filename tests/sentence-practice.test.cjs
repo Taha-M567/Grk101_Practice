@@ -126,3 +126,54 @@ test('deponent category is preserved and Translation contains the same selected 
   app.button('Translation').click();
   assert.equal(app.read('display.length'), 84);
 });
+
+test('Test 4 sections contain their own vocabulary, grammar, and practice cards', () => {
+  const app = load();
+  const allIds = JSON.parse(app.read('JSON.stringify([...allCards,...laterCards].map(c => c.id))'));
+  assert.equal(new Set(allIds).size, allIds.length);
+  app.elements.test4.click();
+  assert.equal(app.elements.test4.attributes['aria-pressed'], 'true');
+  assert.equal(app.elements.test3.attributes['aria-pressed'], 'false');
+  assert.deepEqual(app.elements.section.children.map(option => option.value), ['all','7b','8a','8b','9a']);
+  assert.equal(app.read('display.length'), 319);
+  assert.equal(app.button(label), undefined);
+  assert.match(app.elements.deckTitle.textContent, /Test 4/);
+  for (const [section, count, grammar] of [['7b',20,'Interrogative / indefinite words'],['8a',10,'Present participles'],['8b',28,'Numbers and expressions of time'],['9a',10,'Present participles']]) {
+    app.elements.section.listeners.change({target: {value: section}});
+    assert.ok(app.read('display.every(c => c.section === section)'));
+    assert.ok(app.button('Vocabulary'));
+    app.button('Grammar').click();
+    assert.equal(app.elements.grammarGroup.hidden, false);
+    const subtopic = app.elements.grammarButtons.children.find(button => button.children[0].textContent === grammar);
+    subtopic.click();
+    assert.ok(app.read('display.length > 0 && display.every(c => c.topic === "grammar" && c.subtopic === topic)'));
+    app.button('Test 4 practice sentences').click();
+    assert.equal(app.read('display.length'), count);
+    assert.ok(app.read('display.every(c => c.section === section && c.subtopic === "practice" && c.back && c.source.includes("(2nd ed.)"))'));
+    app.elements.flip.click();
+    assert.equal(app.elements.maintext.textContent, app.read('display[index].back'));
+  }
+});
+
+test('switching tests resets filters and keeps saved ratings in the right review queue', () => {
+  const saved = {'athenaze-test3-comprehensive-v2': JSON.stringify({c261:false, c004:true})};
+  const app = load(saved);
+  app.elements.review.click();
+  assert.equal(app.read('display[0].id'), 'c261');
+  app.elements.test4.click();
+  assert.equal(app.read('missedOnly'), false);
+  assert.equal(app.elements.review.textContent, 'Review missed (0)');
+  const newId = app.read('display[0].id');
+  app.elements.missed.click();
+  app.elements.review.click();
+  assert.equal(app.read('display[0].id'), newId);
+  app.elements.test3.click();
+  assert.deepEqual(app.elements.section.children.map(option => option.value), ['all','6a','6b','7a']);
+  app.elements.review.click();
+  assert.equal(app.read('display[0].id'), 'c261');
+  const reopened = load(saved);
+  reopened.elements.test4.click();
+  reopened.elements.review.click();
+  assert.equal(reopened.read('display[0].id'), newId);
+  assert.equal(reopened.read('ratings.c004'), true);
+});
